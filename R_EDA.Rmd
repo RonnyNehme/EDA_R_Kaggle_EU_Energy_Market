@@ -1,0 +1,295 @@
+# En general, el conjunto de los datos ofrece la siguiente información:
+
+# fecha: Fecha en la que se genera el dato de transacción.
+# hora: Hora en la que se registra la transacción.
+# sistema: Mercado Europeo regulador de los precios de energía
+# bandera: Si es horario invierno o verano
+# precio: Precio que marca el sistema para el precio de la energía.
+# tipo_moneda: Tipo de moneda, pudiendo ser euro o libra
+# origen_dato: Web desde la que se ingesta el registro del precio.
+# fecha_actualizacion: Última fecha de verificación del dato.
+
+
+# 1 -> Carga el dataset como dataframe y, borra si hay alguna columna que no aporte información como IDs.
+
+```{r}
+df <- read.csv("/Users/wa6omak/Documents/Master Data Science/Fundamentos R/Final Exam R/da_market_data.csv")
+df
+```
+
+```{r}
+summary(df)
+```
+
+```{r}
+unique(df$origen_dato)
+```
+
+```{r}
+# Borramos la columna de 'origen_dato' como no aporta valor a la hora de hacer este estudio del data
+df <- df[,-8]
+df
+```
+
+# 2 -> Obtén el rango de las fechas ¿Para cuántos años tenemos registros de los datos?
+
+```{r}
+attach(df)
+```
+```{r}
+
+date_range <- paste(min(fecha), " - ", max(fecha))
+
+date_range
+
+```
+
+Usaremos la conversión de as.Date() para obtener una figura exacta
+
+```{r}
+
+fecha <- as.Date(fecha)
+
+lower_date <- min(fecha)
+upper_date <- max(fecha)
+
+years_data <- as.numeric(upper_date - lower_date) / 365.25 # tomando en cuenta y ajustando por años bisiestos (365.25 = la media de días en un año)
+
+years_data <- round(years_data, 2)
+
+cat("Tenemos registros de los datos durante", years_data, "años")
+
+# -> 11.47 años
+
+```
+
+# 3 -> Sin importar el año, ¿Qué día del mes se reportan más registros? ¿Cuál es el que menos?
+
+```{r}
+
+dias <- format((fecha), "%d")
+
+days <- as.numeric(dias)
+
+days_sort <- table(days)
+
+mas_days <- names(days_sort)[which.max(days_sort)]
+
+men_days <- names(days_sort)[which.min(days_sort)]
+
+cat("El", mas_days, "del mes se reportan más registros\n")
+cat("El", men_days, "del mes se reportan menos registros")
+
+```
+
+# 4-> Si analizamos la variable precio, parece que hay precios del mercado energético que aparecen en negativo, toma todos aquellos valores que sean negativos y, transformalos en nulo ¿Qué cantidad hay de valores nulos?. Posteriormente realiza estas dos operaciones:
+# 4.1 -> Asigna un cero a todos los valores nulos menos a los que pertenezcan al mercado de Dinamarca (DK1 y DK2), puedes consultar más información sobre los nombres de los mercados aquí: https://www.jao.eu/sites/default/files/2022-03/List%20of%20Bidding%20Zone%20borders_2022_CORE.pdf
+# 4.2 -> Borra el resto de nulos.
+# 4.3 -> ¿Cuántos datos había antes de borrar nulos y, cuantos quedan ahora?, es decir ¿Cuántos datos se han borrado?
+
+```{r}
+
+# 4.1
+
+library(dplyr)
+
+# valores negativos a nulos
+data <- df %>%
+  mutate(precio = ifelse(precio < 0, NA, precio))
+
+```
+
+```{r}
+summary(data)
+```
+```{r}
+# nulos a 0s menos Dinamarca
+data <- data %>%
+  mutate(precio = ifelse(is.na(precio) & !(sistema %in% c("DK1", "DK2")), 0, precio))
+```
+
+```{r}
+summary(data)
+```
+```{r}
+
+# 4.2 + 4.3
+
+# num filas antes de borrar
+con_nulos <- nrow(data)
+
+# borrar nulos
+data <- na.omit(data)
+
+# num filas despues de borrar
+sin_nulos <- nrow(data)
+
+# Diferenica
+borrados <- con_nulos - sin_nulos
+cat("Numero de datos borrados:", borrados)
+
+```
+
+# 5 -> La variable bandera presenta los siguientes valores 0 y 1, estos valores están referidos al horario de invierno 0 y horario de verano 1, crea una nueva variable categórica llamada ESTACION que tenga los valores invierno y verano. Investiga la función recode del paquete dplyr
+
+```{r}
+
+data <- data %>%
+  mutate(estacion = recode(bandera, `1` = "verano", `0` = "invierno")) %>%
+  mutate(estacion = as.factor(estacion)) # recode devuelve un vector de clase "character", háy qué cambiarlo
+
+data
+
+```
+
+```{r}
+
+class(data$estacion)
+
+```
+
+# 6 -> La columna tipo de moneda tiene dos valores 1 que es €/MWh y 2 GBP/MWh, recodifica la propia variable a los valores categóricos Euros y Libras. Por lo tanto, tenemos precios en dos monedas diferentes, analiza el precio medio del mercado energético en función de la estación y el tipo de moneda.
+
+```{r}
+
+data <- data %>%
+  mutate(tipo_moneda = recode(tipo_moneda, `1` = "Euros", `2` = "Pounds")) %>%
+  mutate(tipo_moneda = as.factor(tipo_moneda))
+
+```
+
+```{r}
+class(data$tipo_moneda)
+```
+
+```{r}
+
+data %>%
+  group_by(estacion, tipo_moneda) %>%
+  summarize(avg_precio = mean(precio, na.rm = TRUE))
+
+```
+
+# 7 -> Toma la columnas fecha_actualizacion y, toma únicamente la parte de la fecha sin contar la hora y, obtén la diferencia en días entre la fecha de actualización y la columna fecha. Tras obtener dicha diferencia muestra el promedio de días de actualización, cuanto más alto mejor, eso querrá decir que datos muy antiguos siguen teniendo registros de actualización: Pista, investiga la función difftime y as.Date
+
+```{r}
+
+data$fecha <- as.Date(data$fecha)
+data$fecha_actualizacion <- as.Date(data$fecha_actualizacion)
+
+update_days <- as.numeric(difftime(data$fecha_actualizacion, data$fecha, units = "days"))
+
+summary(update_days)
+
+cat("\nPromedio de días de actualización:", mean(update_days))
+
+```
+# 8 -> Filtra el dataset por el tipo de moneda Euros y el mercado español, visualiza la serie completa respecto a la fecha de registro del precio del mercado energético. Actualmente, vivimos en tiempos de bastante inestabilidad en el mercado energético ¿se ve reflejado en la visualización?
+
+```{r}
+
+df_euro_es <- data %>%
+  filter(tipo_moneda == 'Euros', sistema == 'ES') %>%
+  arrange(fecha)
+
+df_euro_es
+
+```
+
+```{r}
+summary(df_euro_es)
+```
+
+```{r}
+sd(df_euro_es$precio)
+```
+
+```{r}
+
+library(ggplot2)
+
+ggplot(data = df_euro_es, aes(x = fecha, y = precio)) +
+  geom_line() +
+  ggtitle("Mercado Energetico Español") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+Se ve el augmento en la dispersión de los valores indicando un mercado energético bastante más volátil.
+
+# 9 -> Toma el precio medio en euros por cada año del mercado energético de Francia y España. Visualiza la evolución del precio medio de ambos mercados.
+
+```{r}
+
+df_es_fr <- data %>%
+  filter(sistema %in% c("FR", "ES"))
+
+df_es_fr$year <- lubridate::year(df_es_fr$fecha)
+
+fr_es_avg_prices <- df_es_fr %>%
+  group_by(year, sistema) %>%
+  summarise(avg_price = mean(precio))
+
+```
+
+```{r}
+fr_es_avg_prices
+```
+
+```{r}
+
+ggplot(fr_es_avg_prices, aes(x = year, y = avg_price, color = sistema)) +
+  geom_line() +
+  labs(x = "Año", y = "Precio Medio (Euros)", color = "Mercado") +
+  scale_x_continuous(breaks = seq(min(fr_es_avg_prices$year), max(fr_es_avg_prices$year), by = 1))
+
+```
+
+# 10 -> Sin importar la moneda, muestra un top 10 para los países que tengan el precio medio más alto en el mercado energético y, el top 10 con el valor más pequeño.
+
+```{r}
+
+df_upper <- data %>%
+  group_by(sistema) %>%
+  summarize(avg_price = mean(precio)) %>%
+  arrange(desc(avg_price)) %>%
+  head(10)  # top 10 countries with highest average price
+
+df_upper
+
+```
+
+```{r}
+
+df_lower <- data %>%
+  group_by(sistema) %>%
+  summarize(avg_price = mean(precio)) %>%
+  arrange(avg_price) %>%
+  head(10)  # top 10 countries with smallest average price
+
+df_lower
+
+```
+
+```{r}
+
+top10 <- rbind(
+  data.frame(sistema = df_upper$sistema, avg_price = df_upper$avg_price, rank = "Alto"),
+  data.frame(sistema = df_lower$sistema, avg_price = df_lower$avg_price, rank = "Pequeño")
+)
+
+ggplot(top10, aes(x = avg_price, y = reorder(sistema, avg_price), fill = rank)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("#FF4136", "#0074D9")) +
+  xlab("Average Price") +
+  ylab("Country") +
+  ggtitle("Mercado Energético: Precio Medio Más Alto y Pequeño") +
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10),
+        legend.position = "bottom")
+
+```
+
+
