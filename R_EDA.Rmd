@@ -13,7 +13,7 @@
 # 1 -> Carga el dataset como dataframe y, borra si hay alguna columna que no aporte información como IDs.
 
 ```{r}
-df <- read.csv("/Users/wa6omak/Documents/Master Data Science/Fundamentos R/Final Exam R/da_market_data.csv")
+df <- read.csv("da_market_data.csv")
 df
 ```
 
